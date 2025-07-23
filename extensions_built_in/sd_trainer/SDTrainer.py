@@ -261,8 +261,6 @@ class SDTrainer(BaseSDTrainProcess):
                     debug=self.train_config.blockswap_debug
                 )
                 print_acc(f"BlockSwap enabled for {target_model.__class__.__name__}")
-                if self.train_config.blockswap_debug:
-                    self.blockswap_manager.print_stats()
             else:
                 print_acc("Warning: No suitable model found for BlockSwap")
 

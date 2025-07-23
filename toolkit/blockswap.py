@@ -1,16 +1,8 @@
-"""
-BlockSwap - Memory-efficient training for low VRAM systems
-
-This module provides automatic block swapping capabilities to enable training of large models
-on systems with limited VRAM by intelligently moving model blocks between GPU and CPU memory.
-"""
-
 import gc
 import time
 import threading
-import traceback  # Add missing import
-import re  # Add missing re import
-from typing import Dict, List, Optional, Set, Union, Callable, Any
+import re
+from typing import Dict, List, Optional, Set
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from collections import defaultdict, deque
@@ -44,21 +36,6 @@ class BlockInfo:
 
 
 class BlockSwapManager:
-    """
-    Manages automatic swapping of model blocks between GPU and CPU memory.
-    
-    This system works by:
-    1. Monitoring GPU memory usage
-    2. Identifying which blocks are currently needed
-    3. Swapping inactive blocks to CPU when memory is low
-    4. Pre-loading blocks that will be needed soon
-    
-    GRADIENT CHECKPOINTING COMPATIBILITY:
-    - Prevents swapping during backward pass to maintain device consistency
-    - Uses context managers to preserve critical blocks during checkpointing
-    - Ensures tensors remain on same device during forward/backward passes
-    """
-    
     def __init__(
         self,
         model: nn.Module,
@@ -94,15 +71,6 @@ class BlockSwapManager:
         self._in_backward_pass = False
         self._backward_context_depth = 0
         self._preserved_blocks: Set[str] = set()
-        
-        # Statistics
-        self.stats = {
-            'swaps_to_cpu': 0,
-            'swaps_to_gpu': 0,
-            'memory_saved': 0,
-            'swap_time_total': 0,
-            'checkpointing_conflicts_avoided': 0,
-        }
         
         # Async worker thread
         self.worker_thread = None
@@ -147,10 +115,10 @@ class BlockSwapManager:
         """Identify which modules can be swapped with better granularity."""
         # More restrictive patterns - only safe sub-modules that won't interfere with gradient checkpointing
         swappable_patterns = [
-            'transformer_blocks\.\d+\.ff\.net\.\d+$',     # Only FF net sub-layers (final layer)
-            'single_transformer_blocks\.\d+\.ff\.net\.\d+$',
-            'down_blocks\.\d+\.resnets\.\d+\.conv\d+$',  # Only conv layers in resnets
-            'up_blocks\.\d+\.resnets\.\d+\.conv\d+$',
+            'transformer_blocks\\.\d+\\.ff\\.net\\.\d+$',     # Only FF net sub-layers (final layer)
+            'single_transformer_blocks\\.\d+\\.ff\\.net\\.\d+$',
+            'down_blocks\\.\d+\\.resnets\\.\d+\\.conv\d+$',  # Only conv layers in resnets
+            'up_blocks\\.\d+\\.resnets\\.\d+\\.conv\d+$',
         ]
         
         # Aggressive exclusion for gradient checkpointing compatibility
@@ -198,17 +166,6 @@ class BlockSwapManager:
             '.*\.to_out$',
         ]
         
-        # Critical modules that should never be swapped
-        critical_modules = [
-            'norm_out',
-            'proj_out',
-            'to_out',
-            'final_layer',
-            'output_projection',
-            'time_embedding',
-            'timestep_embedding',
-        ]
-        
         def is_swappable(name: str, module: nn.Module) -> bool:
             # Skip modules without parameters
             param_count = sum(p.numel() for p in module.parameters())
@@ -237,7 +194,6 @@ class BlockSwapManager:
             
             return False
         
-        swappable_count = 0
         for name, module in self.model.named_modules():
             if is_swappable(name, module):
                 # Get all parameters
@@ -266,31 +222,9 @@ class BlockSwapManager:
                 )
                 
                 self.blocks[name] = block_info
-                swappable_count += 1
                 
                 if self.debug:
                     print(f"BlockSwap: Identified swappable block: {name} ({memory_size / 1024**2:.1f} MB)")
-        
-        if self.debug:
-            print(f"BlockSwap: Total swappable blocks identified: {swappable_count}")
-            
-            # Print summary by category
-            categories = defaultdict(list)
-            for name, block in self.blocks.items():
-                if 'transformer_blocks' in name and 'ff' in name:
-                    categories['FF Layers'].append(block)
-                elif 'transformer_blocks' in name and 'attn' in name:
-                    categories['Attention Layers'].append(block)
-                elif 'down_blocks' in name:
-                    categories['Down Blocks'].append(block)
-                elif 'up_blocks' in name:
-                    categories['Up Blocks'].append(block)
-                else:
-                    categories['Other'].append(block)
-            
-            for category, blocks in categories.items():
-                total_memory = sum(b.memory_size for b in blocks)
-                print(f"BlockSwap: {category}: {len(blocks)} blocks, {total_memory / 1024**2:.1f} MB total")
     
     def enable(self):
         """Enable blockswapping."""
@@ -492,8 +426,6 @@ class BlockSwapManager:
         except Exception as e:
             if self.debug:
                 print(f"BlockSwap: Error checking memory pressure: {e}")
-                import traceback
-                traceback.print_exc()
     
     def _free_gpu_memory(self):
         """Free GPU memory by swapping blocks to CPU with better memory management."""
@@ -527,7 +459,6 @@ class BlockSwapManager:
                 except Exception as e:
                     if self.debug:
                         print(f"BlockSwap: Error processing block '{name}' in _free_gpu_memory: {e}")
-                        traceback.print_exc()
             
             if self.debug:
                 print(f"BlockSwap: Found {len(candidates)} candidate blocks for swapping")
@@ -591,7 +522,6 @@ class BlockSwapManager:
                     except Exception as e:
                         if self.debug:
                             print(f"BlockSwap: Error swapping '{name}' to CPU: {e}")
-                            traceback.print_exc()
                 
                 # Force garbage collection after each batch
                 if torch.cuda.is_available():
@@ -631,8 +561,6 @@ class BlockSwapManager:
         if self.debug:
             print(f"BlockSwap: Moving '{block_name}' to CPU (size: {block_info.memory_size / 1024**2:.1f} MB, pinned={self.use_pinned_memory})")
         
-        start_time = time.time()
-        
         try:
             # Use a more memory-efficient approach for all modules
             # Move parameters one by one to reduce memory spikes
@@ -663,10 +591,6 @@ class BlockSwapManager:
                     if self.debug:
                         print(f"BlockSwap: Warning - could not pin memory for '{block_name}': {e}")
             
-            # Update stats
-            self.stats['swaps_to_cpu'] += 1
-            self.stats['memory_saved'] += block_info.memory_size
-            self.stats['swap_time_total'] += time.time() - start_time
             self.last_swap_time = time.time()
             
             # Force garbage collection after each swap
@@ -674,7 +598,7 @@ class BlockSwapManager:
                 torch.cuda.empty_cache()
                 
             if self.debug:
-                print(f"BlockSwap: Successfully moved '{block_name}' to CPU in {(time.time() - start_time)*1000:.1f}ms")
+                print(f"BlockSwap: Successfully moved '{block_name}' to CPU")
                 
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
@@ -691,11 +615,9 @@ class BlockSwapManager:
             else:
                 if self.debug:
                     print(f"BlockSwap: Error moving '{block_name}' to CPU: {e}")
-                    traceback.print_exc()
         except Exception as e:
             if self.debug:
                 print(f"BlockSwap: Unexpected error moving '{block_name}' to CPU: {e}")
-                traceback.print_exc()
     
     def _swap_to_gpu(self, block_name: str, urgent: bool = False):
         """Swap a block from CPU (possibly pinned) to GPU."""
@@ -718,8 +640,6 @@ class BlockSwapManager:
         if self.debug:
             print(f"BlockSwap: Moving '{block_name}' to GPU")
         
-        start_time = time.time()
-        
         try:
             if not urgent:
                 self._check_memory_pressure()
@@ -728,9 +648,6 @@ class BlockSwapManager:
             # Move from pinned CPU to GPU
             block_info.module.to(device, non_blocking=True)
             
-            # No need to unpin, PyTorch handles pinned memory on transfer
-            self.stats['swaps_to_gpu'] += 1
-            self.stats['swap_time_total'] += time.time() - start_time
             self.last_swap_time = time.time()
             
         except Exception as e:
@@ -798,62 +715,6 @@ class BlockSwapManager:
             # Restore original priority
             block_info.swap_priority = original_priority
     
-    def get_stats(self) -> Dict[str, Any]:
-        """Get swapping statistics."""
-        gpu_blocks = 0
-        for block in self.blocks.values():
-            try:
-                # Try to get device from module
-                if hasattr(block.module, 'device'):
-                    device_type = block.module.device.type
-                elif hasattr(block.module, 'weight') and hasattr(block.module.weight, 'device'):
-                    device_type = block.module.weight.device.type
-                else:
-                    # Fallback: check first parameter
-                    params = list(block.module.parameters())
-                    if params:
-                        device_type = params[0].device.type
-                    else:
-                        continue  # Skip modules without parameters or device info
-                
-                if device_type == 'cuda':
-                    gpu_blocks += 1
-            except AttributeError:
-                # Skip modules that don't have device info
-                continue
-        
-        cpu_blocks = len(self.blocks) - gpu_blocks
-        
-        stats = self.stats.copy()
-        stats.update({
-            'total_blocks': len(self.blocks),
-            'gpu_blocks': gpu_blocks,
-            'cpu_blocks': cpu_blocks,
-            'active_blocks': len(self.active_blocks),
-            'memory_saved_mb': self.stats['memory_saved'] / 1024**2,
-            'avg_swap_time': (
-                self.stats['swap_time_total'] / max(1, self.stats['swaps_to_cpu'] + self.stats['swaps_to_gpu'])
-            )
-        })
-        
-        return stats
-    
-    def print_stats(self):
-        """Print current statistics."""
-        stats = self.get_stats()
-        print("\n" + "="*50)
-        print("BlockSwap Statistics")
-        print("="*50)
-        print(f"Total Blocks: {stats['total_blocks']}")
-        print(f"GPU Blocks: {stats['gpu_blocks']}")
-        print(f"CPU Blocks: {stats['cpu_blocks']}")
-        print(f"Active Blocks: {stats['active_blocks']}")
-        print(f"Swaps to CPU: {stats['swaps_to_cpu']}")
-        print(f"Swaps to GPU: {stats['swaps_to_gpu']}")
-        print(f"Memory Saved: {stats['memory_saved_mb']:.1f} MB")
-        print(f"Avg Swap Time: {stats['avg_swap_time']*1000:.1f} ms")
-        print("="*50)
-    
     def __enter__(self):
         self.enable()
         return self
@@ -887,19 +748,6 @@ def enable_blockswap(
     use_pinned_memory: bool = True,
     **kwargs
 ) -> BlockSwapManager:
-    """
-    Enable blockswapping for a model with sensible defaults.
-    
-    Args:
-        model: The model to enable blockswapping for
-        memory_threshold: GPU memory threshold (0.85 = 85%)
-        max_blocks_on_gpu: Maximum number of blocks to keep on GPU
-        use_pinned_memory: Use pinned memory for CPU blocks (faster transfer)
-        **kwargs: Additional arguments for BlockSwapManager
-    
-    Returns:
-        BlockSwapManager instance
-    """
     manager = create_blockswap_manager(
         model, memory_threshold, max_blocks_on_gpu, use_pinned_memory=use_pinned_memory, **kwargs
     )
