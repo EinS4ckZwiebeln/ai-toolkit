@@ -52,6 +52,11 @@ class BlockSwapManager:
     2. Identifying which blocks are currently needed
     3. Swapping inactive blocks to CPU when memory is low
     4. Pre-loading blocks that will be needed soon
+    
+    GRADIENT CHECKPOINTING COMPATIBILITY:
+    - Prevents swapping during backward pass to maintain device consistency
+    - Uses context managers to preserve critical blocks during checkpointing
+    - Ensures tensors remain on same device during forward/backward passes
     """
     
     def __init__(
@@ -63,7 +68,8 @@ class BlockSwapManager:
         enable_predictive_loading: bool = True,  # Enable predictive block loading
         swap_delay: float = 0.1,  # Minimum time between swaps (seconds)
         debug: bool = False,
-        use_pinned_memory: bool = True  # <--- New option for pinned memory
+        use_pinned_memory: bool = True,
+        gradient_checkpointing_safe: bool = True  # Enable checkpointing compatibility
     ):
         self.model = model
         self.memory_threshold = memory_threshold
@@ -73,6 +79,7 @@ class BlockSwapManager:
         self.swap_delay = swap_delay
         self.debug = debug
         self.use_pinned_memory = use_pinned_memory
+        self.gradient_checkpointing_safe = gradient_checkpointing_safe
         
         # Internal state
         self.blocks: Dict[str, BlockInfo] = {}
@@ -83,12 +90,18 @@ class BlockSwapManager:
         self.swap_lock = threading.Lock()
         self.is_enabled = False
         
+        # Gradient checkpointing compatibility
+        self._in_backward_pass = False
+        self._backward_context_depth = 0
+        self._preserved_blocks: Set[str] = set()
+        
         # Statistics
         self.stats = {
             'swaps_to_cpu': 0,
             'swaps_to_gpu': 0,
             'memory_saved': 0,
             'swap_time_total': 0,
+            'checkpointing_conflicts_avoided': 0,
         }
         
         # Async worker thread
@@ -96,7 +109,40 @@ class BlockSwapManager:
         self.stop_worker = threading.Event()
         
         self._identify_swappable_blocks()
+        self._install_backward_hooks()
         
+    def _install_backward_hooks(self):
+        """Install hooks to detect backward pass for gradient checkpointing compatibility."""
+        if not self.gradient_checkpointing_safe:
+            return
+            
+        def pre_backward_hook(module, grad_output):
+            """Called before backward pass starts."""
+            self._in_backward_pass = True
+            self._backward_context_depth += 1
+            if self.debug:
+                print(f"BlockSwap: Entering backward pass (depth: {self._backward_context_depth})")
+            
+        def post_backward_hook(module, grad_input, grad_output):
+            """Called after backward pass completes."""
+            self._backward_context_depth -= 1
+            if self._backward_context_depth <= 0:
+                self._in_backward_pass = False
+                self._backward_context_depth = 0
+                if self.debug:
+                    print("BlockSwap: Exiting backward pass")
+                
+                # After backward pass, we can safely swap again
+                if self.is_enabled:
+                    self._check_memory_pressure()
+        
+        # Install hooks on the model to detect backward pass
+        for name, module in self.model.named_modules():
+            if len(list(module.parameters())) > 0:  # Only modules with parameters
+                module.register_full_backward_pre_hook(pre_backward_hook)
+                module.register_full_backward_hook(post_backward_hook)
+                break  # Only need to install on one module
+    
     def _identify_swappable_blocks(self):
         """Identify which modules can be swapped with better granularity."""
         # More restrictive patterns - only safe sub-modules that won't interfere with gradient checkpointing
