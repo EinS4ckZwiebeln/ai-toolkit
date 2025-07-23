@@ -454,6 +454,12 @@ class BlockSwapManager:
 
     def _free_gpu_memory(self):
         """Free GPU memory by swapping blocks to CPU with better memory management."""
+        # Prevent swapping during backward pass if gradient checkpointing is enabled
+        if self.gradient_checkpointing_safe and self._in_backward_pass:
+            if self.debug:
+                print("BlockSwap: Skipping _free_gpu_memory during backward pass (gradient checkpointing safe).")
+            return
+        
         with self.swap_lock:
             if self.debug:
                 print("BlockSwap: Starting _free_gpu_memory")
@@ -576,6 +582,12 @@ class BlockSwapManager:
 
     def _swap_to_cpu(self, block_name: str):
         """Swap a block from GPU to CPU with improved memory handling."""
+        # Prevent swapping during backward pass if gradient checkpointing is enabled
+        if self.gradient_checkpointing_safe and self._in_backward_pass:
+            if self.debug:
+                print(f"BlockSwap: Skipping swap_to_cpu('{block_name}') during backward pass (gradient checkpointing safe).")
+            return
+
         if time.time() - self.last_swap_time < self.swap_delay:
             return
 
