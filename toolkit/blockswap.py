@@ -52,7 +52,8 @@ class BlockSwapManager:
         enable_async_swap: bool = True,  # Enable asynchronous swapping
         enable_predictive_loading: bool = True,  # Enable predictive block loading
         swap_delay: float = 0.1,  # Minimum time between swaps (seconds)
-        debug: bool = False
+        debug: bool = False,
+        use_pinned_memory: bool = True  # <--- New option for pinned memory
     ):
         self.model = model
         self.memory_threshold = memory_threshold
@@ -61,6 +62,7 @@ class BlockSwapManager:
         self.enable_predictive_loading = enable_predictive_loading
         self.swap_delay = swap_delay
         self.debug = debug
+        self.use_pinned_memory = use_pinned_memory
         
         # Internal state
         self.blocks: Dict[str, BlockInfo] = {}
@@ -338,7 +340,7 @@ class BlockSwapManager:
                 self._swap_to_cpu(name)
     
     def _swap_to_cpu(self, block_name: str):
-        """Swap a block from GPU to CPU."""
+        """Swap a block from GPU to CPU with optional pinned memory."""
         if time.time() - self.last_swap_time < self.swap_delay:
             return
         
@@ -351,13 +353,22 @@ class BlockSwapManager:
             return
         
         if self.debug:
-            print(f"BlockSwap: Moving '{block_name}' to CPU")
+            print(f"BlockSwap: Moving '{block_name}' to CPU (pinned={self.use_pinned_memory})")
         
         start_time = time.time()
         
         try:
             # Move to CPU
             block_info.module.to('cpu', non_blocking=True)
+            
+            # Pin memory for all parameters and buffers if enabled
+            if self.use_pinned_memory:
+                for param in block_info.module.parameters():
+                    if hasattr(param, 'data') and not param.data.is_pinned():
+                        param.data = param.data.pin_memory()
+                for buf in block_info.module.buffers():
+                    if hasattr(buf, 'data') and not buf.data.is_pinned():
+                        buf.data = buf.data.pin_memory()
             
             # Update stats
             self.stats['swaps_to_cpu'] += 1
@@ -374,7 +385,7 @@ class BlockSwapManager:
                 print(f"BlockSwap: Error moving '{block_name}' to CPU: {e}")
     
     def _swap_to_gpu(self, block_name: str, urgent: bool = False):
-        """Swap a block from CPU to GPU."""
+        """Swap a block from CPU (possibly pinned) to GPU."""
         if not urgent and time.time() - self.last_swap_time < self.swap_delay:
             return
         
@@ -392,15 +403,14 @@ class BlockSwapManager:
         start_time = time.time()
         
         try:
-            # Ensure we have enough GPU memory
             if not urgent:
                 self._check_memory_pressure()
-            
-            # Move to GPU
-            device = block_info.device if block_info.device.type == 'cuda' else 'cuda'
+            # Fix: set device properly
+            device = block_info.device if hasattr(block_info, 'device') and block_info.device.type == 'cuda' else torch.device('cuda')
+            # Move from pinned CPU to GPU
             block_info.module.to(device, non_blocking=True)
             
-            # Update stats
+            # No need to unpin, PyTorch handles pinned memory on transfer
             self.stats['swaps_to_gpu'] += 1
             self.stats['swap_time_total'] += time.time() - start_time
             self.last_swap_time = time.time()
@@ -538,6 +548,7 @@ def create_blockswap_manager(
     model: nn.Module,
     memory_threshold: float = 0.85,
     max_blocks_on_gpu: Optional[int] = None,
+    use_pinned_memory: bool = True,  # <--- Add to signature
     **kwargs
 ) -> BlockSwapManager:
     """Create and configure a BlockSwapManager for the given model."""
@@ -545,6 +556,7 @@ def create_blockswap_manager(
         model=model,
         memory_threshold=memory_threshold,
         max_blocks_on_gpu=max_blocks_on_gpu,
+        use_pinned_memory=use_pinned_memory,
         **kwargs
     )
 
@@ -554,6 +566,7 @@ def enable_blockswap(
     model: nn.Module,
     memory_threshold: float = 0.85,
     max_blocks_on_gpu: Optional[int] = None,
+    use_pinned_memory: bool = True,  # <--- Add to signature
     **kwargs
 ) -> BlockSwapManager:
     """
@@ -563,13 +576,14 @@ def enable_blockswap(
         model: The model to enable blockswapping for
         memory_threshold: GPU memory threshold (0.85 = 85%)
         max_blocks_on_gpu: Maximum number of blocks to keep on GPU
+        use_pinned_memory: Use pinned memory for CPU blocks (faster transfer)
         **kwargs: Additional arguments for BlockSwapManager
     
     Returns:
         BlockSwapManager instance
     """
     manager = create_blockswap_manager(
-        model, memory_threshold, max_blocks_on_gpu, **kwargs
+        model, memory_threshold, max_blocks_on_gpu, use_pinned_memory=use_pinned_memory, **kwargs
     )
     manager.enable()
     return manager
