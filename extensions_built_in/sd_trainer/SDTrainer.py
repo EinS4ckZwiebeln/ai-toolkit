@@ -35,6 +35,7 @@ import math
 from toolkit.train_tools import precondition_model_outputs_flow_match
 from toolkit.models.diffusion_feature_extraction import DiffusionFeatureExtractor, load_dfe
 from toolkit.util.wavelet_loss import wavelet_loss
+from toolkit.blockswap import enable_blockswap, BlockSwapManager
 import torch.nn.functional as F
 
 
@@ -84,6 +85,7 @@ class SDTrainer(BaseSDTrainProcess):
         
         self.dfe: Optional[DiffusionFeatureExtractor] = None
         self.unconditional_embeds = None
+        self.blockswap_manager: Optional[BlockSwapManager] = None
         
         if self.train_config.diff_output_preservation:
             if self.trigger_word is None:
@@ -234,6 +236,35 @@ class SDTrainer(BaseSDTrainProcess):
             if vae is not None and self.train_config.gradient_checkpointing:
                 vae.enable_gradient_checkpointing()
                 vae.train()
+        
+        # Initialize BlockSwap for low VRAM training
+        if self.train_config.enable_blockswap:
+            print_acc("\n***** ENABLING BLOCKSWAP *****")
+            print_acc("BlockSwap will automatically manage GPU memory by swapping model blocks")
+            print_acc("This enables training on low VRAM systems")
+            print_acc("*******************************")
+            
+            # Determine which model to apply blockswap to
+            target_model = None
+            if hasattr(self.sd, 'unet') and self.sd.unet is not None:
+                target_model = self.sd.unet
+            elif hasattr(self.sd, 'transformer') and self.sd.transformer is not None:
+                target_model = self.sd.transformer
+            
+            if target_model is not None:
+                self.blockswap_manager = enable_blockswap(
+                    model=target_model,
+                    memory_threshold=self.train_config.blockswap_memory_threshold,
+                    max_blocks_on_gpu=self.train_config.blockswap_max_blocks_on_gpu,
+                    enable_async_swap=self.train_config.blockswap_enable_async,
+                    enable_predictive_loading=self.train_config.blockswap_enable_predictive,
+                    debug=self.train_config.blockswap_debug
+                )
+                print_acc(f"BlockSwap enabled for {target_model.__class__.__name__}")
+                if self.train_config.blockswap_debug:
+                    self.blockswap_manager.print_stats()
+            else:
+                print_acc("Warning: No suitable model found for BlockSwap")
 
 
     def process_output_for_turbo(self, pred, noisy_latents, timesteps, noise, batch):
@@ -986,7 +1017,12 @@ class SDTrainer(BaseSDTrainProcess):
         pass
 
     def end_of_training_loop(self):
-        pass
+        # Cleanup BlockSwap if it was enabled
+        if self.blockswap_manager is not None:
+            self.blockswap_manager.disable()
+            self.blockswap_manager = None
+            # Force final memory cleanup
+            flush()
 
     def predict_noise(
         self,

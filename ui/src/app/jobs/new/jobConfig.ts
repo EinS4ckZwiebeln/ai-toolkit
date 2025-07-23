@@ -76,6 +76,12 @@ export const defaultJobConfig: JobConfig = {
           diff_output_preservation: false,
           diff_output_preservation_multiplier: 1.0,
           diff_output_preservation_class: 'person',
+          enable_blockswap: false,
+          blockswap_memory_threshold: 0.85,
+          blockswap_max_blocks_on_gpu: undefined,
+          blockswap_enable_async: true,
+          blockswap_enable_predictive: true,
+          blockswap_debug: false,
         },
         model: {
           name_or_path: 'ostris/Flex.1-alpha',
@@ -92,7 +98,7 @@ export const defaultJobConfig: JobConfig = {
           height: 1024,
           samples: [
             {
-              prompt: 'woman with red hair, playing chess at the park, bomb going off in the background'
+              prompt: 'woman with red hair, playing chess at the park, bomb going off in the background',
             },
             {
               prompt: 'a woman holding a coffee cup, in a beanie, sitting at a cafe',
@@ -101,7 +107,8 @@ export const defaultJobConfig: JobConfig = {
               prompt: 'a horse is a DJ at a night club, fish eye lens, smoke machine, lazer lights, holding a martini',
             },
             {
-              prompt: 'a man showing off his cool new t shirt at the beach, a shark is jumping out of the water in the background',
+              prompt:
+                'a man showing off his cool new t shirt at the beach, a shark is jumping out of the water in the background',
             },
             {
               prompt: 'a bear building a log cabin in the snow covered mountains',
@@ -113,13 +120,15 @@ export const defaultJobConfig: JobConfig = {
               prompt: 'hipster man with a beard, building a chair, in a wood shop',
             },
             {
-              prompt: 'photo of a man, white background, medium shot, modeling clothing, studio lighting, white backdrop',
+              prompt:
+                'photo of a man, white background, medium shot, modeling clothing, studio lighting, white backdrop',
             },
             {
               prompt: "a man holding a sign that says, 'this is a sign'",
             },
             {
-              prompt: 'a bulldog, in a post apocalyptic world, with a shotgun, in a leather jacket, in a desert, with a motorcycle',
+              prompt:
+                'a bulldog, in a post apocalyptic world, with a shotgun, in a leather jacket, in a desert, with a motorcycle',
             },
           ],
           neg: '',

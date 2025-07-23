@@ -117,6 +117,12 @@ export interface TrainConfig {
   diff_output_preservation: boolean;
   diff_output_preservation_multiplier: number;
   diff_output_preservation_class: string;
+  enable_blockswap?: boolean;
+  blockswap_memory_threshold?: number;
+  blockswap_max_blocks_on_gpu?: number;
+  blockswap_enable_async?: boolean;
+  blockswap_enable_predictive?: boolean;
+  blockswap_debug?: boolean;
 }
 
 export interface QuantizeKwargsConfig {
@@ -135,7 +141,7 @@ export interface ModelConfig {
 
 export interface SampleItem {
   prompt: string;
-  width?: number
+  width?: number;
   height?: number;
   neg?: string;
   seed?: number;
