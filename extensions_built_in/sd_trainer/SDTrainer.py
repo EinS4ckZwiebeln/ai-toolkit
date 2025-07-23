@@ -239,11 +239,6 @@ class SDTrainer(BaseSDTrainProcess):
         
         # Initialize BlockSwap for low VRAM training
         if self.train_config.enable_blockswap:
-            print_acc("\n***** ENABLING BLOCKSWAP *****")
-            print_acc("BlockSwap will automatically manage GPU memory by swapping model blocks")
-            print_acc("This enables faster training on low VRAM systems")
-            print_acc("*******************************")
-            
             # Determine which model to apply blockswap to
             target_model = None
             if hasattr(self.sd, 'unet') and self.sd.unet is not None:
