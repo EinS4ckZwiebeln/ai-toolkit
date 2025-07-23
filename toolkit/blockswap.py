@@ -88,8 +88,6 @@ class BlockSwapManager:
             """Called before backward pass starts."""
             self._in_backward_pass = True
             self._backward_context_depth += 1
-            if self.debug:
-                print(f"BlockSwap: Entering backward pass (depth: {self._backward_context_depth})")
             
         def post_backward_hook(module, grad_input, grad_output):
             """Called after backward pass completes."""
@@ -97,9 +95,6 @@ class BlockSwapManager:
             if self._backward_context_depth <= 0:
                 self._in_backward_pass = False
                 self._backward_context_depth = 0
-                if self.debug:
-                    print("BlockSwap: Exiting backward pass")
-                
                 # After backward pass, we can safely swap again
                 if self.is_enabled:
                     self._check_memory_pressure()
