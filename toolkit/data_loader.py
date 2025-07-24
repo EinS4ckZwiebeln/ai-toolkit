@@ -651,6 +651,10 @@ def get_dataloader_from_datasets(
         dataloader_kwargs['num_workers'] = dataset_config_list[0].num_workers
         dataloader_kwargs['prefetch_factor'] = dataset_config_list[0].prefetch_factor
 
+    # Enable pinned memory for CUDA
+    if torch.cuda.is_available():
+        dataloader_kwargs['pin_memory'] = True
+
     if has_buckets:
         # make sure they all have buckets
         for dataset in datasets:
