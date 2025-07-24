@@ -452,7 +452,7 @@ class TrainConfig:
         # BlockSwap configuration for low VRAM training
         self.enable_blockswap = kwargs.get('enable_blockswap', False)
         self.blockswap_memory_threshold = kwargs.get('blockswap_memory_threshold', 0.85)
-        self.blockswap_max_blocks_on_gpu = kwargs.get('blockswap_max_blocks_on_gpu', None)
+        self.blockswap_max_blocks_on_gpu = kwargs.get('blockswap_max_blocks_on_gpu', 1)
         self.blockswap_enable_async = kwargs.get('blockswap_enable_async', True)
         self.blockswap_enable_predictive = kwargs.get('blockswap_enable_predictive', True)
         self.blockswap_debug = kwargs.get('blockswap_debug', False)

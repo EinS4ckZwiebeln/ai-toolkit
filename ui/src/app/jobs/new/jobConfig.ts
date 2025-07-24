@@ -78,7 +78,7 @@ export const defaultJobConfig: JobConfig = {
           diff_output_preservation_class: 'person',
           enable_blockswap: false,
           blockswap_memory_threshold: 0.85,
-          blockswap_max_blocks_on_gpu: undefined,
+          blockswap_max_blocks_on_gpu: 1,
           blockswap_enable_async: true,
           blockswap_enable_predictive: true,
           blockswap_debug: false,
