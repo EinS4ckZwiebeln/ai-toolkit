@@ -618,17 +618,27 @@ class BlockSwapManager:
             print(f"BlockSwap: Moving '{block_name}' to CPU (size: {block_info.memory_size / 1024**2:.1f} MB, pinned={self.use_pinned_memory})")
 
         try:
+            # Check for UintxTensor in parameters or buffers before any move
+            has_uintx = any(
+                (p.device.type == 'cuda' and p.__class__.__name__ == 'UintxTensor')
+                for p in block_info.module.parameters()
+            ) or any(
+                (b.device.type == 'cuda' and b.__class__.__name__ == 'UintxTensor')
+                for b in block_info.module.buffers()
+            )
+            if has_uintx:
+                if self.debug:
+                    print(f"BlockSwap: Skipping all move/pin for '{block_name}' due to UintxTensor (quantized weights)")
+                return  # Skip all move/pin for this module
+
             # Move parameters one by one to reduce memory spikes
             for param in block_info.module.parameters():
                 if param.device.type == 'cuda':
                     cpu_param = param.detach().cpu()
-                    # Explicitly reassign data to drop reference to GPU tensor
                     param.data = cpu_param
-
             for buf in block_info.module.buffers():
                 if buf.device.type == 'cuda':
                     cpu_buf = buf.detach().cpu()
-                    # Explicitly reassign data to drop reference to GPU tensor
                     buf.data = cpu_buf
 
             # Pin memory for all parameters and buffers if enabled
@@ -672,7 +682,7 @@ class BlockSwapManager:
                         print(f"BlockSwap: Failed to swap '{block_name}' even with fallback: {e2}")
             else:
                 if self.debug:
-                    print(f"BlockSwap: Error moving '{block_name}' to CPU: {e}")
+                    print(f"BlockSwap: Failed moving '{block_name}' to CPU: {e}")
         except Exception as e:
             if self.debug:
                 print(f"BlockSwap: Unexpected error moving '{block_name}' to CPU: {e}")
@@ -727,7 +737,7 @@ class BlockSwapManager:
 
         except Exception as e:
             if self.debug:
-                print(f"BlockSwap: Error moving '{block_name}' to GPU: {e}")
+                print(f"BlockSwap: Failed moving '{block_name}' to GPU: {e}")
 
     def _async_worker(self):
         """Async worker thread for non-critical swapping operations."""
