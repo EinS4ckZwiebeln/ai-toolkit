@@ -43,7 +43,7 @@ class BlockSwapManager:
         max_blocks_on_gpu: Optional[int] = None,  # Maximum blocks to keep on GPU
         enable_async_swap: bool = True,  # Enable asynchronous swapping
         enable_predictive_loading: bool = True,  # Enable predictive block loading
-        swap_delay: float = 0.1,  # Minimum time between swaps (seconds)
+        swap_delay: float = 0.025,  # Minimum time between swaps (seconds)
         debug: bool = False,
         use_pinned_memory: bool = True,
         gradient_checkpointing_safe: bool = True  # Enable checkpointing compatibility
@@ -400,31 +400,33 @@ class BlockSwapManager:
         """Check if we need to free GPU memory."""
         if not torch.cuda.is_available():
             return
-        
         # Do not swap during backward pass if gradient checkpointing safe is enabled
         if self.gradient_checkpointing_safe and self._in_backward_pass:
             if self.debug:
                 print("BlockSwap: Skipping memory check during backward pass (gradient checkpointing safe).")
             return
-
         try:
             device = torch.device("cuda:0")
             memory_allocated = torch.cuda.memory_allocated(device)
             total_memory = torch.cuda.get_device_properties(device).total_memory
 
             # Convert to int if needed, using .item() if it's a tensor
-            memory_allocated = int(memory_allocated.item()) if isinstance(memory_allocated, torch.Tensor) else int(memory_allocated)
-            total_memory = int(total_memory.item()) if isinstance(total_memory, torch.Tensor) else int(total_memory)
+            if isinstance(memory_allocated, torch.Tensor):
+                memory_allocated = memory_allocated.item()
+            if isinstance(total_memory, torch.Tensor):
+                total_memory = total_memory.item()
+            memory_allocated = int(memory_allocated)
+            total_memory = int(total_memory)
 
             if total_memory == 0:
                 return
-            memory_used = memory_allocated / total_memory
+            memory_used = float(memory_allocated) / float(total_memory)
 
             # Ensure memory_threshold is a float
             memory_threshold = float(self.memory_threshold)
 
             pressure_active = False
-            if memory_used > memory_threshold:
+            if float(memory_used) > float(memory_threshold):
                 if self.debug:
                     print(f"BlockSwap: Memory pressure detected - {memory_used:.2f} > {memory_threshold}")
                 pressure_active = True
