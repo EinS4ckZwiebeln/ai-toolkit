@@ -73,6 +73,13 @@ class FluxSageAttnProcessor2_0:
             query = apply_rotary_emb(query, image_rotary_emb)
             key = apply_rotary_emb(key, image_rotary_emb)
 
+        # Add numerical stability - clip large values
+        max_val = 1e6
+        query = torch.clamp(query, -max_val, max_val)
+        key = torch.clamp(key, -max_val, max_val)
+        value = torch.clamp(value, -max_val, max_val)
+        
+        # Use more stable attention
         hidden_states = sageattn(query, key, value, dropout_p=0.0, is_causal=False)
         hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
         hidden_states = hidden_states.to(query.dtype)

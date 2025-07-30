@@ -1556,7 +1556,9 @@ class BaseSDTrainProcess(BaseTrainProcess):
                     block.attn.set_processor(processor)
                 print_acc("Using SageAttention")     
             except ImportError:
-                print_acc("Sage attention is not installed. Using SDP instead")
+                print_acc("SageAttention is not installed.")
+            except Exception as e:
+                print_acc(f"Error enabling SageAttention: {e}. Falling back to SDP.")
 
         if self.train_config.gradient_checkpointing:
             # if has method enable_gradient_checkpointing
