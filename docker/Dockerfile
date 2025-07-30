@@ -65,7 +65,7 @@ WORKDIR /app/ai-toolkit
 RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --pre --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128 --force && \
     pip install setuptools==69.5.1 --no-cache-dir \
-    python scripts/install_sageattention.py || true
+    python scripts/install_sageattention.py
 
 # Build UI
 WORKDIR /app/ai-toolkit/ui
