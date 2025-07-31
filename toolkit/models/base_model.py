@@ -226,10 +226,6 @@ class BaseModel:
     @property
     def is_flux(self):
         return self.arch == 'flux'
-    
-    @property
-    def is_flux_kontext(self):
-        return self.arch == 'flux_kontext'
 
     @property
     def is_lumina2(self):

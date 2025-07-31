@@ -1541,22 +1541,23 @@ class BaseSDTrainProcess(BaseTrainProcess):
             torch.backends.cuda.enable_flash_sdp(True)
             torch.backends.cuda.enable_mem_efficient_sdp(True)
         
-        # check if we have sage and is flux
-        if self.sd.is_flux or self.sd.is_flux_kontext:
-            try:
-                from sageattention import sageattn
-                from toolkit.models.flux_sage_attn import FluxSageAttnProcessor2_0
-                model: FluxTransformer2DModel = self.sd.unet
-                # enable sage attention on each block
-                for block in model.transformer_blocks:
-                    processor = FluxSageAttnProcessor2_0()
-                    block.attn.set_processor(processor)
-                for block in model.single_transformer_blocks:
-                    processor = FluxSageAttnProcessor2_0()
-                    block.attn.set_processor(processor)
-                print_acc("Using SageAttention")     
-            except ImportError:
-                print_acc("Sage attention is not installed. Using SDP instead")
+        # # check if we have sage and is flux
+        # if self.sd.is_flux:
+        #     # try_to_activate_sage_attn()
+        #     try:
+        #         from sageattention import sageattn
+        #         from toolkit.models.flux_sage_attn import FluxSageAttnProcessor2_0
+        #         model: FluxTransformer2DModel = self.sd.unet
+        #         # enable sage attention on each block
+        #         for block in model.transformer_blocks:
+        #             processor = FluxSageAttnProcessor2_0()
+        #             block.attn.set_processor(processor)
+        #         for block in model.single_transformer_blocks:
+        #             processor = FluxSageAttnProcessor2_0()
+        #             block.attn.set_processor(processor)
+                    
+        #     except ImportError:
+        #         print_acc("sage attention is not installed. Using SDP instead")
 
         if self.train_config.gradient_checkpointing:
             # if has method enable_gradient_checkpointing
